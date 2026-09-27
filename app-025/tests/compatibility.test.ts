@@ -190,6 +190,31 @@ describe('混养兼容性（验收：30 组用例全部检出并给出原因）'
     const issues = checkStocking(entries, ctx);
     expect(codes(issues)).toEqual(expect.arrayContaining(['size-gap', 'aggression']));
   });
+
+  it('同一啃草鱼种不随配对数重复告警（checkStocking 去重）', () => {
+    const gf = fish({ id: 'gf', name: '金鱼', plantNip: true, adultCm: 20 });
+    const entries = [
+      { fish: gf, count: 1 },
+      { fish: fish({ id: 'o1', name: '孔雀', adultCm: 4.5 }), count: 2 },
+      { fish: fish({ id: 'o2', name: '月光', adultCm: 5 }), count: 2 },
+    ];
+    const issues = checkStocking(entries, { tankLitres: 500, hasPlants: true });
+    const nips = issues.filter((i) => i.code === 'plant-nip');
+    expect(nips).toHaveLength(1);
+    expect(nips[0].message).toContain('金鱼');
+  });
+
+  it('配对双方均啃草 → 两条鱼各自告警一次', () => {
+    const entries = [
+      { fish: fish({ id: 'n1', name: '金鱼', plantNip: true }), count: 1 },
+      { fish: fish({ id: 'n2', name: '虎皮', plantNip: true }), count: 1 },
+    ];
+    const issues = checkStocking(entries, { tankLitres: 500, hasPlants: true });
+    const nips = issues.filter((i) => i.code === 'plant-nip');
+    expect(nips).toHaveLength(2);
+    expect(nips.map((i) => i.message).join('')).toContain('金鱼');
+    expect(nips.map((i) => i.message).join('')).toContain('虎皮');
+  });
 });
 
 describe('缸体最小容量与密度校验', () => {

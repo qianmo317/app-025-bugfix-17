@@ -110,15 +110,17 @@ export function checkPair(a: Fish, b: Fish, ctx: PairCheckContext): StockingIssu
     });
   }
 
-  // 规则 4：啃草鱼 × 草缸
-  if (ctx.hasPlants && (a.plantNip || b.plantNip)) {
-    const nipper = a.plantNip ? a : b;
-    issues.push({
-      severity: 'warning',
-      code: 'plant-nip',
-      pair,
-      message: `「${nipper.name}」有啃草/拔草习性，与草缸混养会破坏水草`,
-    });
+  // 规则 4：啃草鱼 × 草缸（每条啃草鱼种各计一次；同一鱼种随配对产生的重复在 checkStocking 去重）
+  if (ctx.hasPlants) {
+    for (const nipper of [a, b]) {
+      if (!nipper.plantNip) continue;
+      issues.push({
+        severity: 'warning',
+        code: 'plant-nip',
+        pair,
+        message: `「${nipper.name}」有啃草/拔草习性，与草缸混养会破坏水草`,
+      });
+    }
   }
 
   return issues;
@@ -196,7 +198,8 @@ export function checkDensity(entries: { fish: Fish; count: number }[], effective
   };
 }
 
-/** 汇总入口：全部混养 + 密度检查 */
+/** 汇总入口：逐对混养 + 群游/单养 + 缸体容量检查；相同条目（同严重度/代码/文案）去重，
+ *  避免同一鱼种的告警（如啃草）随配对数量重复出现 */
 export function checkStocking(
   entries: { fish: Fish; count: number }[],
   ctx: PairCheckContext,
@@ -209,5 +212,11 @@ export function checkStocking(
   }
   issues.push(...checkSchooling(entries));
   issues.push(...checkTankSize(entries, ctx.tankLitres));
-  return issues;
+  const seen = new Set<string>();
+  return issues.filter((i) => {
+    const key = `${i.severity}|${i.code}|${i.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

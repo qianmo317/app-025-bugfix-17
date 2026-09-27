@@ -27,7 +27,7 @@ export default function Stocking({ plan }: { plan: Plan }) {
     () => checkStocking(entries, { tankLitres: eff, hasPlants }),
     [entries, eff, hasPlants],
   );
-  const density = checkDensity(entries, (plan.tank.l * plan.tank.w * plan.tank.h) / 1000);
+  const density = checkDensity(entries, eff);
 
   function addFish() {
     if (!pickId) return;
@@ -136,16 +136,17 @@ export default function Stocking({ plan }: { plan: Plan }) {
         <section className={`card2 ${density.over ? 'over' : ''}`} data-testid="density-card">
           <h3>密度校验（经验估算，建议）</h3>
           <p>
-            总成体长度 <b>{entries.reduce((s, e) => s + e.count, 0).toFixed(1)}cm</b> ÷ {eff.toFixed(1)}L ={' '}
-            <b>{density.totalCm.toFixed(2)}cm/L</b>（经验阈值 1cm/L）
+            总成体长度 <b>{density.totalCm.toFixed(1)}cm</b> ÷ 有效水量 {eff.toFixed(1)}L ={' '}
+            <b>{density.cmPerL.toFixed(2)}cm/L</b>（经验阈值 {density.threshold.toFixed(2)}cm/L，随平均成体体长 1~0.5 过渡）
           </p>
           <p>{density.over ? '超出经验密度，建议减少数量' : '在经验范围内'}</p>
+          <p className="muted small">{density.note}</p>
         </section>
       )}
 
       <h3>检查结果</h3>
       <div data-testid="issues">
-        {issues.length === 0 && (
+        {entries.length > 0 && issues.length === 0 && (
           <div className="okbox" data-testid="no-issues">
             未发现混养冲突
           </div>
@@ -157,7 +158,7 @@ export default function Stocking({ plan }: { plan: Plan }) {
         ].map(([label, list, cls]) =>
           (list as StockingIssue[]).length > 0 ? (
             <div key={label as string}>
-              <h4>{label as string}（{issues.length}）</h4>
+              <h4>{label as string}（{(list as StockingIssue[]).length}）</h4>
               {(list as StockingIssue[]).map((iss, i) => (
                 <div key={i} className={`issue ${cls as string}`} data-testid={`issue-${iss.code}`}>{iss.message}</div>
               ))}

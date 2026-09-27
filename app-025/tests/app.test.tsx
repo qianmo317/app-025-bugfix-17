@@ -209,6 +209,86 @@ describe('生物兼容页', () => {
     expect(await screen.findByTestId('density-card')).toBeInTheDocument();
     expect(screen.getByTestId('density-card').textContent).toContain('经验估算');
   });
+
+  it('密度卡按成体总长度 ÷ 有效水量计算，阈值随鱼体大小分档', async () => {
+    // 40×30×25cm 水柱 = 30L 毛水，默认底砂 9.6L → 有效水量 20.4L
+    const plan = newPlan('密度数字');
+    upsertPlan({
+      ...plan,
+      tank: { ...plan.tank, l: 40, w: 30, h: 30, waterLevelMm: 250 },
+      fishes: [{ fishId: 'f-neon-tetra', count: 30 }], // 30 尾 × 3.5cm
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    await screen.findByTestId('stocking-page');
+    const card = await screen.findByTestId('density-card');
+    // 总成体长度 30×3.5=105cm（不是尾数 30）
+    expect(card.textContent).toContain('105.0cm');
+    // 105cm ÷ 有效水量 20.4L ≈ 5.15cm/L
+    expect(card.textContent).toContain('20.4L');
+    expect(card.textContent).toContain('5.15cm/L');
+    // 小鱼阈值 ≈0.93cm/L（不是固定 1cm/L），且判定超标
+    expect(card.textContent).toContain('0.93cm/L');
+    expect(card.textContent).toContain('超出经验密度');
+  });
+
+  it('大鱼密度阈值放宽到 0.5cm/L 并显示在密度卡上', async () => {
+    // 200×80×70cm 水柱 = 1120L 毛水，底砂 128L → 有效水量 992L
+    const plan = newPlan('大鱼密度');
+    upsertPlan({
+      ...plan,
+      tank: { ...plan.tank, l: 200, w: 80, h: 80, waterLevelMm: 700 },
+      fishes: [{ fishId: 'f-oscar', count: 10 }], // 10 尾 × 30cm = 300cm
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    await screen.findByTestId('stocking-page');
+    const card = await screen.findByTestId('density-card');
+    expect(card.textContent).toContain('300.0cm');
+    expect(card.textContent).toContain('0.30cm/L');
+    expect(card.textContent).toContain('0.50cm/L');
+    expect(card.textContent).toContain('在经验范围内');
+  });
+
+  it('结论分栏计数各自统计，同一啃草警告不重复出现', async () => {
+    const plan = newPlan('分组计数');
+    upsertPlan({
+      ...plan,
+      items: [{ id: 'p1', kind: 'plant', name: '红宫廷', x: 10, y: 10, scaleCm: 25, rotDeg: 0, layer: 'back', lightNeed: 'high', growth: 'fast', qty: 5 }],
+      fishes: [
+        { fishId: 'f-goldfish', count: 1 },
+        { fishId: 'f-discus', count: 1 },
+        { fishId: 'f-neon-tetra', count: 3 },
+      ],
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    await screen.findByTestId('stocking-page');
+    // 硬冲突 6 条（水温×2、体长差×2、缸体不足×2），警告 1 条（啃草），建议 1 条（群游）
+    expect(await screen.findByText('硬冲突（6）')).toBeInTheDocument();
+    expect(screen.getByText('警告（1）')).toBeInTheDocument();
+    expect(screen.getByText('建议（1）')).toBeInTheDocument();
+    // 金鱼与两个鱼种配对，啃草警告只出现一次
+    expect(screen.getAllByTestId('issue-plant-nip')).toHaveLength(1);
+  });
+
+  it('空缸不显示"未发现混养冲突"，有鱼且无冲突时才显示', async () => {
+    const plan = newPlan('空缸');
+    upsertPlan(plan);
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    const { unmount } = render(<App />);
+    await screen.findByTestId('stocking-page');
+    expect(screen.queryByTestId('no-issues')).toBeNull();
+    expect(screen.getByText(/加入鱼种后自动逐对检查/)).toBeInTheDocument();
+    unmount();
+
+    const plan2 = newPlan('无冲突');
+    upsertPlan({ ...plan2, fishes: [{ fishId: 'f-neon-tetra', count: 6 }] });
+    window.location.hash = `/plan/${plan2.id}/stocking`;
+    render(<App />);
+    await screen.findByTestId('stocking-page');
+    expect(await screen.findByTestId('no-issues')).toBeInTheDocument();
+  });
 });
 
 describe('物料清单页', () => {
