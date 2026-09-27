@@ -209,6 +209,83 @@ describe('生物兼容页', () => {
     expect(await screen.findByTestId('density-card')).toBeInTheDocument();
     expect(screen.getByTestId('density-card').textContent).toContain('经验估算');
   });
+
+  it('空鱼时不显示"未发现混养冲突"，只显示引导文案', async () => {
+    const plan = newPlan('空缸测试');
+    upsertPlan(plan);
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    await screen.findByTestId('stocking-page');
+    expect(screen.queryByTestId('no-issues')).toBeNull();
+    expect(screen.getByTestId('issues').textContent).toContain('加入鱼种后自动逐对检查');
+    // 有鱼且无冲突时才显示
+    upsertPlan({ ...plan, fishes: [{ fishId: 'f-neon-tetra', count: 6 }] });
+    expect(await screen.findByTestId('no-issues')).toBeInTheDocument();
+  });
+
+  it('密度卡：总长度按成体×数量、cm/L 按有效水量、阈值随体长过渡', async () => {
+    // 30 尾 4cm 宝莲灯；60×30×30 缸水位 250mm → 毛水量 45L，无底砂/素材 → 有效水量 45L
+    const plan = newPlan('密度数字');
+    upsertPlan({
+      ...plan,
+      tank: { ...plan.tank, l: 60, w: 30, h: 30, waterLevelMm: 250 },
+      substrate: { ...plan.substrate, thicknessMm: 0, slopeMm: 0 },
+      fishes: [{ fishId: 'f-cardinal-tetra', count: 30 }],
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    const card = (await screen.findByTestId('density-card')).textContent!;
+    // 总成体长度 = 30×4 = 120cm（不是尾数 30）
+    expect(card).toContain('120.0cm');
+    expect(card).not.toContain('30.0cm');
+    // cm/L = 120 ÷ 45 ≈ 2.67（不是总长度本身）
+    expect(card).toContain('45.0L');
+    expect(card).toContain('2.67cm/L');
+    expect(card).not.toContain('120.00cm/L');
+    // 平均 4cm → 阈值 1/(1+(4-3)/7) ≈ 0.88cm/L（不是固定 1cm/L）
+    expect(card).toContain('0.88cm/L');
+  });
+
+  it('密度卡：大型鱼经验阈值放宽到 1cm/2L', async () => {
+    // 2 尾 30cm 地图鱼；200×50×50 缸水位 400mm → 有效水量 400L
+    const plan = newPlan('大鱼阈值');
+    upsertPlan({
+      ...plan,
+      tank: { ...plan.tank, l: 200, w: 50, h: 50, waterLevelMm: 400 },
+      substrate: { ...plan.substrate, thicknessMm: 0, slopeMm: 0 },
+      fishes: [{ fishId: 'f-oscar', count: 2 }],
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    const card = (await screen.findByTestId('density-card')).textContent!;
+    expect(card).toContain('60.0cm'); // 2×30
+    expect(card).toContain('0.15cm/L'); // 60÷400
+    expect(card).toContain('0.50cm/L'); // 平均 30cm → 阈值 0.5
+    expect(card).not.toContain('1cm/L）');
+  });
+
+  it('检查结果三栏按各自条数统计，条目不跨栏重复', async () => {
+    // 斗鱼×2 + 红绿灯×3：2 条警告（混养隔离 + 雄性互斗）+ 1 条群游建议，无硬冲突
+    const plan = newPlan('分组统计');
+    upsertPlan({
+      ...plan,
+      fishes: [
+        { fishId: 'f-betta', count: 2 },
+        { fishId: 'f-neon-tetra', count: 3 },
+      ],
+    });
+    window.location.hash = `/plan/${plan.id}/stocking`;
+    render(<App />);
+    const issues = await screen.findByTestId('issues');
+    expect(issues.textContent).toContain('警告（2）');
+    expect(issues.textContent).toContain('建议（1）');
+    expect(issues.textContent).not.toContain('硬冲突（');
+    // 群游建议只在建议栏出现一次，警告条目各自独立
+    expect(screen.getAllByTestId('issue-schooling')).toHaveLength(1);
+    expect(screen.getAllByTestId('issue-aggression')).toHaveLength(2);
+    expect(issues.querySelectorAll('.issue')).toHaveLength(3);
+  });
+
 });
 
 describe('物料清单页', () => {
